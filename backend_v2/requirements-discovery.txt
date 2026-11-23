@@ -1,0 +1,8 @@
+# Optional browser dependency for the discovery module.
+#
+# The base API installs and tests without Playwright. To run a portal walk:
+#   pip install -r requirements-discovery.txt
+#   playwright install chromium
+#
+# The browser binary is downloaded by Playwright, not by pip.
+playwright>=1.47,<2.0

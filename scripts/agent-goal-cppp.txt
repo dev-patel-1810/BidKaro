@@ -1,0 +1,58 @@
+You are working through the Indian Central Public Procurement Portal (CPPP) tender
+directory. Work through it exactly as described, and report only what the pages
+actually show.
+
+STEP 1 - Open the organisation directory.
+The page lists organisations in a table with the columns: S.No, Organisation
+Name, Tender Count. Find the organisation whose name matches the company
+profile: a road construction, road building, highways or civil works
+organisation in Maharashtra, for example "Maharashtra Public Works
+Department" or a similar road building / highways / PWD organisation. If the
+page has a search box for the organisation name, use it to narrow the list.
+Report the organisation name you chose and the other plausible candidates you
+saw, so the choice can be checked.
+
+STEP 2 - Enter the organisation's tender list.
+The Tender Count cell contains a link. Click it. You land on the tender list
+for that organisation.
+
+STEP 3 - Read the tender list.
+The list has the columns: S.No, Publishing Date, Closing Date, Opening Date,
+"Title, Ref.No./Tender ID" (one single column that holds the tender title,
+the tender reference number, and the link to the notice), and an organisation
+chain column showing the department hierarchy.
+
+Go through the pages of this list. Do not stop after the first page: if there
+is a next page, go to it and check it too.
+
+Shortlist a row when both of these are true:
+  a) the Title is about road construction, road building, road resurfacing,
+     highways, or civil works; and
+  b) the Closing Date is still in the future. A closed tender is not wanted.
+The location (for example Mumbai) is a weaker signal than the type of work.
+Use the work type to choose. Mention the location only as a secondary note.
+
+STEP 4 - Open each shortlisted notice.
+In the Title cell, the first part of the cell is the link to the notice, shown
+in square brackets. Click it to open the tender notice page. The notice needs
+no login, only session cookies, so just follow the link.
+
+STEP 5 - Read each notice.
+From the notice read: the full title, the issuing organisation, the
+organisation chain, the tender reference number and tender id, the closing
+date and time, the publishing date, the opening date, the estimated cost and
+its currency, the location, the bid validity period, the eligibility
+criteria, the documents to be submitted, and the earnest money or bid
+security. Also record the notice page URL and the tender id.
+
+STEP 6 - Report.
+For every notice you read, report the notice URL and the tender id, and fill
+in the fields. Put the raw readable text of each notice in page_text.
+
+RULES
+- Never guess. If a field is not stated on the page, leave it empty.
+- If the page shows a CAPTCHA, an OTP prompt, a sign-in wall or any other
+  human verification, do not try to solve it. Stop and report status
+  "human_required" with a short description of exactly what is shown.
+- If the list holds no tender that matches, report status "not_found" and
+  say which organisation you looked at and how many rows you saw.

@@ -1,0 +1,71 @@
+You are working through the Indian Central Public Procurement Portal (CPPP) tender
+directory. Do the steps below in order.
+
+Do not spend steps working out how the page works. Use what is on the page and move
+on. If you are not certain of something, take the most likely option and keep going.
+Do not check the same thing twice.
+
+IMPORTANT - DO NOT USE THE ORGANISATION SEARCH BOX. Searching for an organisation by
+name on this page brings up a CAPTCHA, and a CAPTCHA stops the whole task. Instead,
+read the organisations straight out of the table that is already on the page, and
+click the link on the row you want. If the organisation you need is on a later page
+of that table, go to the next page of the table and read it there. Never type into
+the search box.
+
+STEP 1 - Find the organisation.
+The page lists organisations in a table with the columns: S.No, Organisation Name,
+Tender Count. Read that table. If the organisation you want is not on the first page
+of the table, open the next page of the table and read that.
+
+Choose the organisation whose name matches a road construction, road building,
+highways or civil works organisation. Prefer a Maharashtra organisation such as
+"Maharashtra Public Works Department", or another Maharashtra state roads, highways
+or public works organisation. A national highways organisation such as "National
+Highways Authority of India" is also acceptable when no state organisation is
+listed.
+
+Record the organisation name you chose, and the other candidates you saw.
+
+STEP 2 - Open its tender list.
+The Tender Count cell contains a link. Click it. You land on the tender list for that
+organisation.
+
+STEP 3 - Work through the tender list.
+The list has the columns: S.No, Publishing Date, Closing Date, Opening Date,
+"Title, Ref.No./Tender ID" (one single column holding the tender title, the tender
+reference number, and the link to the notice), and an organisation chain column showing
+the department hierarchy.
+
+Go through every page of this list. If there is a next page, open it and check it.
+
+Keep a row when both of these are true:
+  a) the Title is about road construction, road building, road resurfacing,
+     highways, or civil works; and
+  b) the Closing Date is still in the future. A closed tender is not wanted.
+The type of work decides. The location is only a note to record.
+
+Do not open any notice yet. First collect the whole list of matching rows.
+
+STEP 4 - Open the notices.
+For each row you kept, the first part of the Title cell is the link to the notice, shown
+in square brackets. Click it to open the tender notice page. The notice needs no login,
+only the session cookies you already have, so just follow the link.
+
+From each notice read: the full title, the issuing organisation, the organisation
+chain, the tender reference number and tender id, the closing date and time, the
+publishing date, the opening date, the estimated cost and its currency, the location,
+the bid validity period, the eligibility criteria, the documents to be submitted, and
+the earnest money or bid security. Record the notice page URL and the tender id.
+
+STEP 5 - Report.
+Report every notice you read, with its notice URL and the tender id, and fill in the
+fields. Put the readable text of each notice in page_text.
+
+RULES
+- Never guess. If a field is not stated on the page, leave it empty.
+- If a CAPTCHA, an OTP prompt or a sign-in wall appears, do not try to solve it and do
+  not try to work around it. Stop and report status "human_required" with a short
+  description of exactly what is shown and which step you were on.
+- If the list holds no tender that matches, report status "not_found" and say which
+  organisation you looked at and how many rows you saw.
+- If you are running out of time, report what you have so far with status "partial".
