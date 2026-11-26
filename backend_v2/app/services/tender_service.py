@@ -127,7 +127,6 @@ class TenderService:
             company_terms,
             prefilter_terms,
             profile_signature,
-            rarity_from_titles,
         )
         from app.repositories.intelligence import (
             FeedbackRepository,
@@ -154,21 +153,16 @@ class TenderService:
         # Dedupe: two terms can share a plural, a spelling or a reversed word
         # order, and a repeated LIKE only costs the query plan. The list is a
         # *superset* narrowing, so it must not silently lose a term to a
-        # ceiling: a profile with many confirmed phrases can have many terms,
-        # and a tender that matches only the last one still has to reach the
-        # gate. If the list is too long for a cheap prefilter, load the corpus
-        # and let the gate decide instead of dropping the tail.
+        # ceiling: every declared phrase is kept, however many there are, and a
+        # tender that matches only the last one still reaches the gate. The
+        # narrowing is skipped only for the explicit "show everything" view.
         patterns = list(
             dict.fromkeys(
                 f"%{like_pattern(variant)[1:-1]}%"
                 for variant in prefilter_terms(terms)
             )
         )
-        prefilter = (
-            None
-            if include_hidden or len(patterns) > 800
-            else (patterns or None)
-        )
+        prefilter = None if include_hidden else (patterns or None)
 
         rows = self.tenders.list_for_company(
             company.id,
@@ -182,13 +176,6 @@ class TenderService:
             match_patterns=prefilter,
         )
 
-        # Rarity only explains a reason; it never promotes a rung. A small
-        # sample is enough for that, and it keeps the homepage from scanning
-        # every title in a 2,600-row corpus on each page request.
-        titles = self.tenders.recent_titles(limit=400) or [
-            tender.work_title or "" for tender, _link in rows
-        ]
-        rarity = rarity_from_titles(titles, terms)
         feedback_repo = FeedbackRepository(self.session)
         negative = feedback_repo.negative_work_types(company.id)
 
@@ -202,7 +189,7 @@ class TenderService:
         feedback_hash = stable_hash(
             [
                 (str(item.tender_id), item.verdict)
-                for item in feedback_repo.list_for_company(company.id, limit=500)
+                for item in feedback_repo.list_for_company(company.id)
             ]
         )
         cached = VerdictRepository(self.session).get_many(
@@ -225,7 +212,6 @@ class TenderService:
             verdict = self._verdict(
                 company,
                 tender,
-                rarity=rarity,
                 negative=negative,
                 profile_hash=profile_hash,
                 feedback_hash=feedback_hash,
@@ -355,7 +341,6 @@ class TenderService:
         company,
         tender,
         *,
-        rarity: dict[str, float],
         negative: dict[str, int],
         profile_hash: str,
         feedback_hash: str,
@@ -404,7 +389,6 @@ class TenderService:
         verdict = classify(
             company,
             tender,
-            rarity=rarity,
             negative=negative,
             understanding_terms=understanding_terms,
             brief_terms=brief_terms,

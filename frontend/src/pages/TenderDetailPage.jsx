@@ -20,6 +20,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/Card"
 import { EmptyState } from "../components/ui/EmptyState";
 import { Badge, StatusBadge } from "../components/ui/Badge";
 import { Skeleton } from "../components/ui/Spinner";
+import { SimilarityEvidence } from "../components/tender/SimilarityEvidence";
 import { TenderDocumentsPanel } from "../components/tender/TenderDocumentsPanel";
 import { TenderRequirementsPanel } from "../components/tender/TenderRequirementsPanel";
 import { TenderChangesPanel } from "../components/tender/TenderChangesPanel";
@@ -250,6 +251,10 @@ export function TenderDetailPage() {
           </div>
         </CardContent>
       </Card>
+
+      {tender.similarity ? (
+        <SimilarityEvidence similarity={tender.similarity} />
+      ) : null}
 
       <div
         role="tablist"

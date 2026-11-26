@@ -23,8 +23,6 @@ from __future__ import annotations
 
 from app.discovery.work_text import (
     CONNECTORS,
-    GENERIC_WORK_WORDS,
-    NOISE_WORDS,
     clean_term,
     normalize_text,
     term_tokens,
@@ -73,6 +71,7 @@ SUPPORT_WORDS = frozenset(
 #: recall-only: ``web pages`` may find a notice, but it cannot rank one.
 GENERIC_WORDS = frozenset(
     {
+        "annual",
         "app",
         "apps",
         "application",
@@ -83,9 +82,13 @@ GENERIC_WORDS = frozenset(
         "digital",
         "document",
         "documents",
+        "entry",
         "hardware",
         "information",
         "it",
+        "monthly",
+        "page",
+        "pages",
         "portal",
         "portals",
         "provide",
@@ -101,14 +104,44 @@ GENERIC_WORDS = frozenset(
         "webpage",
         "webpages",
         "website",
+        "yearly",
     }
 )
 
-_GENERIC_VOCAB = frozenset(NOISE_WORDS) | frozenset(GENERIC_WORK_WORDS) | GENERIC_WORDS
+#: Only the narrow bare-word set makes a phrase generic. The broader work-text
+#: noise list contains real work nouns such as ``centre`` and ``construction``;
+#: using it here would turn ``data centre`` into a recall-only term.
+_GENERIC_VOCAB = GENERIC_WORDS
+
+
+def role_term(term: str, *, allow_short_acronym: bool = False) -> str | None:
+    """Clean a company term for the brief, keeping a bare generic word.
+
+    ``work_text.clean_term`` deliberately drops a one-word noise term such as
+    ``technology`` from a tender's work phrase. For a company brief that word is
+    still useful for recall, so it is kept in the generic group rather than
+    disappearing from the profile. A place or an organisation acronym is still
+    dropped, because it is not the company's work at all.
+    """
+
+    cleaned = clean_term(term, allow_short_acronym=allow_short_acronym)
+    if cleaned:
+        return cleaned
+    text = normalize_text(term)
+    if not text:
+        return None
+    parts = [
+        part
+        for part in term_tokens(text)
+        if part not in CONNECTORS and part not in {"and", "or", "of", "the"}
+    ]
+    if len(parts) == 1 and parts[0] in GENERIC_WORDS:
+        return parts[0]
+    return None
 
 
 def _tokens(term: str) -> list[str]:
-    cleaned = clean_term(term, allow_short_acronym=True)
+    cleaned = role_term(term)
     if not cleaned:
         return []
     return [

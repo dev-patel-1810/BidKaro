@@ -348,6 +348,58 @@
         "skipped": "Stored as evidence only"
       }
     },
+    "brief": {
+      "open": "Company brief",
+      "title": "Your company brief",
+      "subtitle": "The words discovery uses to rank tenders. Every save becomes a new version, and only the current version is read.",
+      "loading": "Loading the company brief.",
+      "empty": "No profile words are available yet. Add work to your company profile, then generate a brief.",
+      "stored": "Version {{version}}",
+      "preview": "Preview",
+      "previewNote": "This is a preview built from your profile. Save it to make it the current brief.",
+      "generateNote": "Regenerating never deletes a version. Your edited brief stays in the history and can be made current again.",
+      "generate": "Regenerate from profile",
+      "generateFailed": "The brief could not be generated.",
+      "activateFailed": "The version could not be activated.",
+      "saved": "A new company brief version was saved.",
+      "generated": "A new company brief version was generated.",
+      "activated": "That brief version is now current.",
+      "summary": "Short summary",
+      "summaryPlaceholder": "What discovery should know first about your work.",
+      "onePerLine": "One term per line",
+      "termCount": "{{count}} term(s)",
+      "projects": "Projects (strongest evidence)",
+      "certifications": "Certifications (eligibility evidence only)",
+      "noProjects": "No confirmed project yet.",
+      "noCertifications": "No certification document yet.",
+      "certificationNote": "Supports eligibility only; it never makes a tender your kind of work.",
+      "page": "Page {{page}}",
+      "noVersions": "No saved version yet. Save this preview to start the history.",
+      "current": "Current",
+      "activate": "Make current",
+      "versionMeta": "{{core}} core · {{adjacent}} adjacent · {{support}} support · {{generic}} generic",
+      "counts": "{{core}} core · {{adjacent}} adjacent · {{support}} support · {{generic}} generic term(s)",
+      "save": "Save as new version",
+      "tabs": {
+        "edit": "Edit",
+        "versions": "Versions"
+      },
+      "sources": {
+        "human": "Edited by you",
+        "generated": "Generated from your profile",
+        "derived": "Derived from your profile"
+      },
+      "roles": {
+        "core": "Core work",
+        "coreHint": "Confirmed kinds of work and delivered projects. These decide the strongest matches.",
+        "adjacent": "Adjacent declared work",
+        "adjacentHint": "Specific services or sectors you declared but have not confirmed from a document.",
+        "support": "Support services",
+        "supportHint": "Delivery words such as technical support. They never rank as core work.",
+        "generic": "Generic recall terms",
+        "genericHint": "Technology words that help find notices but never decide the ranking."
+      }
+    },
     "columns": {
       "document": "Document",
       "type": "Type",
@@ -1080,7 +1132,21 @@
       "failed": "The comparison could not run.",
       "needCapabilities": "Confirm what your company does before comparing. Open Documents, choose “What we do”, and confirm the extracted items.",
       "openUnderstanding": "Open Documents",
-      "pendingConfirm": "An answer without a quote from the notice is only a suggestion. Confirm it by reading the notice before relying on it."
+      "pendingConfirm": "An answer without a quote from the notice is only a suggestion. Confirm it by reading the notice before relying on it.",
+      "judgedAs": "Notice read as: {{title}}",
+      "tenderEvidence": "The notice says",
+      "companyEvidence": "Your brief says",
+      "noTenderEvidence": "No exact line in the notice supports this.",
+      "noCompanyEvidence": "No exact line in your brief supports this.",
+      "evidenceRank": "Evidence strength {{rank}}/6",
+      "matchTypes": {
+        "exact_core": "Exact core match",
+        "semantic_core": "Same core work",
+        "adjacent": "Adjacent declared work",
+        "support_only": "Support only",
+        "generic_only": "Generic only",
+        "no_evidence": "No evidence"
+      }
     }
   },
   "pagination": {

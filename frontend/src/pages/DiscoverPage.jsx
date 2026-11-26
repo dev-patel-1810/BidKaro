@@ -23,6 +23,7 @@ import { Badge } from "../components/ui/Badge";
 import { EmptyState } from "../components/ui/EmptyState";
 import { Pagination } from "../components/ui/Pagination";
 import { Spinner } from "../components/ui/Spinner";
+import { SimilarityEvidence } from "../components/tender/SimilarityEvidence";
 import { useToast } from "../contexts/ToastContext";
 import { api, ApiError } from "../lib/api";
 import { cn, formatDate, formatDateTime, formatNumber } from "../lib/utils";
@@ -282,35 +283,7 @@ function TenderCard({ item, locale, onSave, onDismiss, onNotRelevant, saving, ma
           </div>
         ) : null}
 
-        {similarity ? (
-          <div className="rounded-xl border border-navy-100 px-3.5 py-2.5 dark:border-navy-800">
-            <p className="text-[11px] font-semibold uppercase tracking-wide text-navy-400">
-              {t("discover.similarity.title")}
-            </p>
-            {similarity.reason ? (
-              <p className="mt-1 text-xs leading-5 muted">{similarity.reason}</p>
-            ) : null}
-            {similarity.anchor_text ? (
-              <p className="mt-1 border-l-2 border-teal-300 pl-2 text-xs italic text-navy-700 dark:border-teal-700 dark:text-navy-200">
-                {t("discover.similarity.anchor", {
-                  text: similarity.anchor_text,
-                })}
-              </p>
-            ) : null}
-            {similarity.capabilities?.length ? (
-              <p className="mt-1 text-[11px] muted">
-                {t("discover.similarity.matched", {
-                  list: similarity.capabilities.join(", "),
-                })}
-              </p>
-            ) : null}
-            {similarity.needs_confirmation ? (
-              <p className="mt-1 text-[11px] font-medium text-amber-700 dark:text-amber-300">
-                {t("discover.similarity.pendingConfirm")}
-              </p>
-            ) : null}
-          </div>
-        ) : null}
+        {similarity ? <SimilarityEvidence similarity={similarity} /> : null}
 
         {item.fetch_state &&
         (item.fetch_state.last_error ||

@@ -256,12 +256,46 @@ match is computed at **read time**, never used as a storage filter. Two
 companies can therefore see different lists over one shared corpus, and adding a
 keyword does not require re-scraping.
 
-### Matching, with the ambiguity guard
+### Matching: four roles and seven rungs
 
-- Plain-text matching with deterministic variants: plural forms, `"B of A"` word order, etc. Every match is explained in `relevance.reasons`.
-- A **bare keyword hit alone cannot list a tender.** It needs a region match too. Otherwise `AMC` (ambiguous acronym) would pull in everything.
+The company profile is not a flat keyword list. Every declared word and every
+confirmed profile item is classified deterministically into one of four roles:
 
-Example: profile keywords include `AMC`. A tender titled *"AMC of lift at hospital"* in a different state does **not** list, because `AMC` is ambiguous and there is no region match.
+| Role | Example | Meaning |
+|---|---|---|
+| `core` | `document scanning` | a confirmed capability or a delivered project's work family |
+| `adjacent` | `web solutions` declared but not confirmed | specific work, unconfirmed |
+| `support` | `technical support`, `document retrieval` | how the work is delivered, not the work |
+| `generic` | `technology`, `web pages`, `software` | recall only |
+
+The rungs are ordered so a generic word can never outrank real work:
+
+1. full core phrase, or core plus adjacent/support evidence;
+2. core alone or a partial core token;
+3. adjacent plus region;
+4. adjacent alone;
+5. support plus region;
+6. support alone or generic-only;
+7. no usable match — hidden.
+
+Tiers 1-3 are `strong`; 4-6 are `possible` and stay visible; 7 is `hidden`
+unless `include_hidden=true`. A whole phrase counts two units, a single term or
+partial token one. The score is only a band inside a rung (capped at 95), not a
+second ladder. Plain-text variants (plural forms, `"B of A"` word order) are
+deterministic, and every match is explained in `relevance.reasons`.
+
+There is deliberately no corpus-rarity pass in the read path: it never promoted
+a rung, and sampling titles paid a corpus scan on every page request. A place,
+authority or organisation chain is never work evidence; it only supplies the
+region context in rungs 3 and 5.
+
+Example: a profile keyword `AMC` is generic, so a notice titled *"AMC of lift at
+hospital"* in a different state is hidden, not listed. A confirmed capability
+`document scanning` matched by *"Digitisation of court records"* is a core
+semantic match at tier 2.
+
+"Not relevant" feedback demotes the matched terms (`0.15` each, clamped to tiers
+4-6). It never bans a tender, and repeats of the same term do not stack.
 
 ### Date reading — the trap
 
@@ -696,36 +730,50 @@ Both carry `page_index` (1-based, the same numbering the corpus uses),
 against that page before storing it, so an invented item is dropped rather than
 shown. A company-name line is never a capability.
 
-**Only confirmed rows are used.** A proposed item is shown on the Documents
-page with its citation and waits; a rejected item stays stored so the human can
-change their mind, and is never used. This is the same rule as evidence: the
-model may propose, the person decides.
+**Only confirmed rows are used for a capability claim.** A proposed item is
+shown on the Documents page with its citation and waits; a rejected item stays
+stored so the human can change their mind, and is never used. This is the same
+rule as evidence: the model may propose, the person decides. The company brief
+(5.13) may also carry a declared **adjacent** term that is not confirmed from a
+document; it can be compared, but it ranks below a core capability and is never
+presented as one.
 
 ### The closed-label judge
 
-For the ambiguous residue the rules gate cannot separate, a capability list is
-sent to the model with the notice's own work description, and the model may
-answer **only** `yes`, `no` or `unsure` — is this the same family of work? No
-score, no reasoning essay, no eligibility call, no new capability, no invented
-requirement.
+Every tender with a stored rules verdict is sent to the model, **without its
+tier, score or bucket**, together with the four brief role groups and the exact
+company lines. The model may answer only `yes`, `no` or `not_sure` — is this the
+same family of work? No score, no reasoning essay, no eligibility call, no new
+capability, no invented requirement.
 
-Two guards make the answer safe to show:
+Each answer carries the notice `title`, an exact `tender_evidence` line, an
+exact `company_evidence` line, a `match_type` and one short reason. Both quotes
+are checked against the stored lines; a missing side is a valid `no_evidence`
+answer. The model cannot invent a quote, and it is never asked to rank the
+tender.
 
-- **The anchor rule.** A `yes` counts only when the words the model quotes as
-  its anchor are found in the notice's own work description. An unanchored
-  `yes` is stored `unsure` with `needs_confirmation` and displayed as
-  "AI suggested — confirm". The model's word alone is never the evidence.
-- **A `no` only demotes.** It subtracts `0.10` from the fit and appends a
-  reason; it never hides, deletes or dismisses the tender. A verified `yes`
-  adds `0.10`. Both are applied on the **read path** on top of the cached rules
-  verdict, so the verdict cache stays rules-only and the comparison cannot
-  alter an eligibility answer.
+Three guards make the answer safe to show:
+
+- **The quote rule.** A `yes` counts only when both quoted lines are found in
+  the stored tender and company evidence. An unanchored or paraphrased `yes` is
+  stored `unsure` with `needs_confirmation` and displayed as "AI suggested —
+  confirm". The model's word alone is never the evidence.
+- **The role rule.** The ranking effect is deterministic and comes from the
+  matched company line's role, not from model confidence: `exact_core` -> tier
+  1, `semantic_core` -> 2, `adjacent` -> 3 with the region otherwise 4,
+  `support_only` -> 5 with the region otherwise 6, `generic_only` -> 6.
+- **A `no` only demotes.** It sets tier 6 at the bottom of the possible band and
+  appends a reason; it never hides, deletes or dismisses the tender. The
+  adjustment is applied on the **read path** on top of the cached rules verdict,
+  so the verdict cache stays rules-only and the comparison cannot alter an
+  eligibility answer.
 
 Judgments are cached per company/tender by an input hash covering the tender's
-content hash, the confirmed capability signature and the rules version. A
-repeat read does not re-ask; a capability edit or a re-published notice does.
-The stored row keeps the model and prompt version, so an answer can be audited
-back to the inputs that produced it.
+content hash, the confirmed capability signature, the brief payload signature
+and the rules version. A repeat read does not re-ask; a brief edit, a capability
+edit or a re-published notice does. The stored row keeps the model, prompt
+version and both quoted lines, so an answer can be audited back to the inputs
+that produced it.
 
 ### Requirement coverage
 
@@ -754,6 +802,50 @@ Migration `0008_company_understanding` adds `company_capabilities`,
 `company_experiences`, `tender_similarity_judgments` and
 `requirement_experience_matches`, the `understanding_*` columns on
 `company_documents`, and the `judge_tender_similarity` job kind.
+
+## 5.13 The company brief — editable, versioned, cited **[BUILT]**
+
+The PDF reader answers *what does the company's document say*. The brief answers
+*what should discovery treat as this company's work*, in the company's own
+words. It is the only company-side text the AI judge is given, and it is
+deliberately separate from eligibility.
+
+| Group | Source | Can rank? |
+|---|---|---|
+| `core` | a confirmed capability or a project's work family | yes, strongest |
+| `adjacent` | a specific service/sector declared in the profile, not confirmed from a document | yes, below core |
+| `support` | delivery words (`technical support`, `document retrieval`, `version control`) | never as core |
+| `generic` | recall words (`technology`, `web pages`, `software`) | recall only |
+
+Projects are the strongest fit evidence. Certifications are kept for
+eligibility evidence and never make a tender the company's kind of work. A term
+keeps its page, printed label and verbatim line when it came from a document, so
+the two-sided evidence panel can quote it exactly.
+
+A human edit is a **new version**, never an in-place change: a past judgment
+still names the words it used. The current version is the only one fit reads.
+The service deterministically downgrades a support/generic phrase typed into a
+stronger section, so a person cannot accidentally promote `technology` to core
+work. A generated brief is refreshed after a capability/experience confirmation
+or after an `about_company` document is deleted; a human-edited brief is never
+overwritten. The Documents page has an editor for the summary and the four
+groups, a version history with "make current", and read-only project and
+certification lists with their citations.
+
+Migration `0010_company_brief` adds `company_briefs` and the evidence columns on
+`tender_similarity_judgments` (`judged_title`, `tender_evidence`,
+`company_evidence`, `match_type`, `evidence_rank`).
+
+### Measuring ranking quality
+
+`scripts/benchmark_relevance.py` runs the deterministic rules layer over
+`tests/fixtures/relevance_benchmark.json` and reports precision@10, precision@20,
+nDCG@20, top-20 mean grade and strong share, false positives that were listed,
+and relevant rows the gate hid. The fixture is synthetic and clearly labelled;
+it is never seeded into a database. It exists so a later tweak cannot quietly
+trade precision for recall (or the reverse) without the numbers moving. The
+AI adjustment is deliberately outside the benchmark: it needs a model key and
+may only re-rank evidence the rules already surfaced.
 
 ---
 

@@ -271,27 +271,6 @@ class TenderRepository:
             )
         return list(self.session.execute(statement).all())
 
-    def recent_titles(self, *, limit: int = 3000) -> list[str]:
-        """The newest work titles, for corpus-wide rarity.
-
-        Rarity must be read from the corpus, not from the rows that already
-        matched: a profile with one term would otherwise see that term in every
-        candidate and call it generic by construction. The sample is bounded so
-        the query stays cheap, and it is ordered so the answer is deterministic.
-        """
-
-        rows = self.session.scalars(
-            select(Tender.work_title)
-            .where(
-                Tender.work_title.is_not(None),
-                Tender.deleted_at.is_(None),
-                Tender.merged_into_tender_id.is_(None),
-            )
-            .order_by(Tender.created_at.desc(), Tender.id.desc())
-            .limit(limit)
-        ).all()
-        return [str(title) for title in rows if title]
-
     def create(self, values: dict[str, Any]) -> Tender:
         tender = Tender(**values)
         self.session.add(tender)

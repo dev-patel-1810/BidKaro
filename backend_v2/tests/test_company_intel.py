@@ -273,7 +273,7 @@ def test_deleting_an_uploaded_document_leaves_the_declared_profile_alone(
     assert listed.status_code == 200, listed.text
     assert listed.json()["profile_complete"] is True
     assert [item["id"] for item in listed.json()["items"]] == [digitization]
-    assert listed.json()["items"][0]["relevance"]["tier"] == 5
+    assert listed.json()["items"][0]["relevance"]["tier"] == 3
 
     deleted = client.delete(
         f"/api/company/documents/{document['id']}", headers=headers

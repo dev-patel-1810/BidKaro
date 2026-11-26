@@ -39,6 +39,7 @@ from app.discovery.roles import (
     ROLE_GENERIC,
     ROLE_SUPPORT,
     classify_term,
+    role_term,
     term_text,
 )
 from app.discovery.work_text import (
@@ -59,10 +60,6 @@ MIN_TERM_LENGTH = 3
 #: Bumped whenever the matching rules change. A stored verdict stamped with an
 #: older version is recomputed rather than reused.
 RULES_VERSION = "2026-11-22.1"
-
-#: How common a term is in the corpus. Used for an explanation only; the tier
-#: ladder is the primary rule and a rare word never promotes a tier on its own.
-RARE_SHARE = 0.02
 
 #: How much one human "not relevant" for a work type demotes a match. Small on
 #: purpose: it reorders and demotes, it never bans a word.
@@ -148,7 +145,7 @@ def _clean_terms(
     seen: set[str] = set()
     out: list[str] = []
     for value in terms or []:
-        cleaned = clean_term(value, allow_short_acronym=allow_short_acronym)
+        cleaned = role_term(value, allow_short_acronym=allow_short_acronym)
         if not cleaned or len(cleaned) < MIN_TERM_LENGTH:
             continue
         if cleaned in seen:
@@ -486,7 +483,6 @@ def _assess_terms(
     *,
     work: str,
     region_words: str,
-    rarity: dict[str, float] | None = None,
     negative: dict[str, int] | None = None,
 ) -> dict[str, Any]:
     work = normalize_text(work)
@@ -501,17 +497,20 @@ def _assess_terms(
         work, terms.get(ROLE_GENERIC, [])
     )
 
-    core_units = _support_units(core_full, core_partial)
-    adjacent_units = _support_units(adjacent_full, adjacent_partial)
-    support_units = _support_units(support_full, support_partial)
-    generic_units = _support_units(generic_full, generic_partial)
+    core_units = sum(_support_units(core_full, core_partial))
+    adjacent_units = sum(_support_units(adjacent_full, adjacent_partial))
+    support_units = sum(_support_units(support_full, support_partial))
+    generic_units = sum(_support_units(generic_full, generic_partial))
     region_match = _region_match(region_words, terms.get("regions", []))
 
     # The evidence ladder. An exact multi-word core phrase is the strongest
     # signal; a confirmed single word or a partial token is the next rung. A
     # support-only phrase can never sit above an adjacent work match, and a
     # generic word can never lift itself above the bottom visible rung.
-    if core_full and any(len(term_tokens(term)) >= 2 for term in core_full):
+    core_exact_phrase = bool(core_full) and any(
+        len(term_tokens(term)) >= 2 for term in core_full
+    )
+    if core_full and (core_exact_phrase or adjacent_full or support_full):
         tier = 1
     elif core_full or core_partial:
         tier = 2
@@ -540,14 +539,7 @@ def _assess_terms(
     for term in adjacent_full:
         if term not in matched_terms:
             matched_terms.append(term)
-        share = (rarity or {}).get(term, 0.0)
-        if share >= 0.2:
-            reasons.append(
-                f"Matches your adjacent declared work: {term} "
-                "(common in this corpus, so it ranks low)"
-            )
-        else:
-            reasons.append(f"Matches your adjacent declared work: {term}")
+        reasons.append(f"Matches your adjacent declared work: {term}")
     for term, token in adjacent_partial:
         if term not in matched_terms:
             matched_terms.append(term)
@@ -812,21 +804,6 @@ def profile_is_complete(
     )
 
 
-def rarity_from_titles(titles: list[str], terms: list[str]) -> dict[str, float]:
-    """How common each term is in the candidate titles, for explanation only."""
-
-    cleaned_titles = [work_text(title) for title in titles if title]
-    cleaned_titles = [title for title in cleaned_titles if title]
-    total = len(cleaned_titles)
-    if total == 0 or not terms:
-        return {}
-    shares: dict[str, float] = {}
-    for term in terms:
-        hits = sum(1 for title in cleaned_titles if term_match(title, term))
-        shares[term] = hits / total
-    return shares
-
-
 def _tender_work(tender: Any) -> str:
     return work_text(
         getattr(tender, "work_title", None),
@@ -853,7 +830,6 @@ def classify(
     company: Any,
     tender: Any,
     *,
-    rarity: dict[str, float] | None = None,
     negative: dict[str, int] | None = None,
     document_terms: list[str] | None = None,
     understanding_terms: list[str] | None = None,
@@ -898,7 +874,6 @@ def classify(
         terms,
         work=_tender_work(tender),
         region_words=_tender_region_words(tender),
-        rarity=rarity,
         negative=negative,
     )
     result["profile_complete"] = True
@@ -909,7 +884,6 @@ def tender_matches_company(
     company: Any,
     tender: Any,
     *,
-    rarity: dict[str, float] | None = None,
     negative: dict[str, int] | None = None,
     document_terms: list[str] | None = None,
     understanding_terms: list[str] | None = None,
@@ -923,7 +897,6 @@ def tender_matches_company(
         classify(
             company,
             tender,
-            rarity=rarity,
             negative=negative,
             document_terms=document_terms,
             understanding_terms=understanding_terms,

@@ -128,6 +128,26 @@ export function similarityLabelKey(similarity) {
   return "discover.similarity.unsure";
 }
 
+// The evidence hierarchy is deterministic (it comes from the matched company
+// line's role, not from the model's confidence), so the UI can tone it.
+const MATCH_TYPE_TONES = {
+  exact_core: "green",
+  semantic_core: "green",
+  adjacent: "teal",
+  support_only: "amber",
+  generic_only: "neutral",
+  no_evidence: "neutral",
+};
+
+export function matchTypeTone(matchType) {
+  return MATCH_TYPE_TONES[matchType] || "neutral";
+}
+
+export function matchTypeLabelKey(matchType) {
+  if (!matchType || !MATCH_TYPE_TONES[matchType]) return null;
+  return `discover.similarity.matchTypes.${matchType}`;
+}
+
 // The gate's three-way answer, shown as it is so a "possible match" card never
 // looks like the gate was certain. "hidden" only appears when the reader asked
 // to see everything, and then it says why the row was out of the list.

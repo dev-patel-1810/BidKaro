@@ -287,6 +287,7 @@ class CompanyService:
 
     def soft_delete_document(self, company: Company, document_id: uuid.UUID) -> None:
         document = self.get_document(company, document_id)
+        was_about_company = document.document_type == "about_company"
         try:
             document.deleted_at = utcnow()
             document.updated_at = utcnow()
@@ -303,6 +304,28 @@ class CompanyService:
         except Exception:
             self.session.rollback()
             raise
+        if was_about_company:
+            self._refresh_generated_brief(company)
+
+    def _refresh_generated_brief(self, company: Company) -> None:
+        """Re-derive a generated brief after the profile or a source document moves.
+
+        A human-edited brief is the human's own words and is never overwritten.
+        A generated one is only a projection of confirmed understanding, so
+        removing the document that supplied a capability must remove the stale
+        core term it contributed.
+        """
+
+        try:
+            from app.services.company_brief import CompanyBriefService
+
+            service = CompanyBriefService(self.session)
+            current = service.current(company.id)
+            if current is not None and current.source_kind == "human":
+                return
+            service.generate(company, source_kind="generated")
+        except Exception:  # noqa: BLE001 - a brief is not worth failing a delete
+            self.session.rollback()
 
     def download_document(
         self, company: Company, document_id: uuid.UUID

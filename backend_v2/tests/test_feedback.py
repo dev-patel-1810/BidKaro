@@ -62,8 +62,8 @@ def _ids(response):
 def _background(count: int = 20) -> None:
     """Fill the corpus with work the company does not declare.
 
-    Rarity is read off the corpus, so a two-tender corpus would say "road" is
-    everywhere. A realistic mix is what makes "road" specific.
+    A realistic mix is what makes "road" specific in the listing, rather than
+    the only work the corpus contains.
     """
 
     for index in range(count):

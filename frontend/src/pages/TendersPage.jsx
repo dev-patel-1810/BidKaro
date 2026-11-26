@@ -23,6 +23,7 @@ import { Input, Label, Select } from "../components/ui/Field";
 import { Pagination } from "../components/ui/Pagination";
 import { Skeleton } from "../components/ui/Spinner";
 import { Badge, StatusBadge } from "../components/ui/Badge";
+import { SimilarityEvidence } from "../components/tender/SimilarityEvidence";
 import { useToast } from "../contexts/ToastContext";
 import {
   DEFAULT_TENDER_SORT,
@@ -269,6 +270,13 @@ export function TendersPage() {
                           </span>
                         ) : null}
                       </p>
+                      {tender.similarity ? (
+                        <SimilarityEvidence
+                          similarity={tender.similarity}
+                          compact
+                          className="mt-2"
+                        />
+                      ) : null}
                     </div>
                   </div>
                   <div className="flex shrink-0 flex-col items-stretch gap-2 sm:items-end">

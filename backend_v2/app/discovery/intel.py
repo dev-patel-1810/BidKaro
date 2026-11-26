@@ -34,7 +34,6 @@ from app.discovery.relevance import (
     classify,
     company_profile_dict,
     profile_signature,
-    rarity_from_titles,
     understanding_terms_from_rows,
 )
 from app.discovery.work_text import contains, work_text
@@ -130,7 +129,6 @@ class CorpusIntelligenceService:
         )
         if not tenders:
             return 0
-        titles = [tender.work_title or "" for tender in tenders]
         understanding = CompanyUnderstandingRepository(self.session)
         briefs = CompanyBriefService(self.session)
         written = 0
@@ -150,7 +148,6 @@ class CorpusIntelligenceService:
             )
             if not terms:
                 continue
-            rarity = rarity_from_titles(titles, terms)
             negative = self.feedback.negative_work_types(company.id)
             profile_hash = stable_hash(
                 profile_signature(
@@ -162,7 +159,7 @@ class CorpusIntelligenceService:
             feedback_hash = stable_hash(
                 [
                     (str(item.tender_id), item.verdict)
-                    for item in self.feedback.list_for_company(company.id, limit=500)
+                    for item in self.feedback.list_for_company(company.id)
                 ]
             )
             cached = self.verdicts.get_many(
@@ -185,7 +182,6 @@ class CorpusIntelligenceService:
                 verdict = classify(
                     company,
                     tender,
-                    rarity=rarity,
                     negative=negative,
                     understanding_terms=understanding_terms,
                     brief_terms=brief_terms,
@@ -212,7 +208,14 @@ class CorpusIntelligenceService:
         self, provider, *, limit: int = 200, batch_size: int | None = None,
         max_batches: int | None = None,
     ) -> dict[str, int]:
-        """Ask the model about rows whose only evidence is a common word."""
+        """Ask the model about rows the rules did not place at core.
+
+        The legacy name is kept because the old job path and tests call it. With
+        role tiers, a declared work word can already be tier 3 (strong) while
+        still being only adjacent evidence; an anchored model ``yes`` should be
+        able to lift that row to core, so the pass reads both buckets and skips
+        only rows the rules already put at tier 1 or 2.
+        """
 
         size = batch_size or self.settings.classification_batch_size
         batches = (
@@ -252,7 +255,8 @@ class CorpusIntelligenceService:
                     )
                     .where(
                         CompanyTenderVerdict.company_id == company.id,
-                        CompanyTenderVerdict.bucket == "possible",
+                        CompanyTenderVerdict.bucket.in_(("possible", "strong")),
+                        CompanyTenderVerdict.tier >= 3,
                         CompanyTenderVerdict.source == "rules",
                     )
                     .order_by(Tender.created_at.desc())
@@ -270,7 +274,7 @@ class CorpusIntelligenceService:
             feedback_hash = stable_hash(
                 [
                     (str(item.tender_id), item.verdict)
-                    for item in self.feedback.list_for_company(company.id, limit=500)
+                    for item in self.feedback.list_for_company(company.id)
                 ]
             )
             for start in range(0, len(rows), size):

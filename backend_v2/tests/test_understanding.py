@@ -110,6 +110,45 @@ class SimilarityAI:
         }
 
 
+class EvidenceAI:
+    """A fake that answers with the new two-sided evidence fields."""
+
+    model = "fake-evidence"
+    configured = True
+
+    def __init__(
+        self,
+        *,
+        answer: str,
+        tender_evidence: str,
+        company_evidence: str,
+        match_type: str = "exact_core",
+        reason: str = "The notice and the brief describe the same work.",
+    ) -> None:
+        self.answer = answer
+        self.tender_evidence = tender_evidence
+        self.company_evidence = company_evidence
+        self.match_type = match_type
+        self.reason = reason
+
+    def complete_json(self, *, system: str, user: str) -> dict:
+        ids = re.findall(r"tender_id: ([0-9a-f-]{36})", user)
+        return {
+            "judgments": [
+                {
+                    "tender_id": tender_id,
+                    "title": "Digitisation of court records",
+                    "answer": self.answer,
+                    "tender_evidence": self.tender_evidence,
+                    "company_evidence": self.company_evidence,
+                    "match_type": self.match_type,
+                    "reason": self.reason,
+                }
+                for tender_id in ids
+            ]
+        }
+
+
 def _upload_profile(client, headers) -> dict:
     response = client.post(
         "/api/company/documents",
@@ -351,7 +390,7 @@ def test_a_no_demotes_but_never_hides_the_tender(client, fake_email):
     )
     score_before = before_row["relevance"]["match_score"]
     tier_before = before_row["relevance"]["tier"]
-    assert tier_before == 2
+    assert tier_before == 1
 
     app.dependency_overrides[get_ai_provider] = lambda: SimilarityAI(
         answer="no",
@@ -560,3 +599,108 @@ def test_batch_similarity_enqueues_one_job_for_the_visible_tenders(
     assert again.json()["created"] is False
     assert again.json()["job"]["id"] == body["job"]["id"]
 
+
+def test_evidence_aware_judgment_stores_both_exact_lines(client, fake_email):
+    headers, _document, _understanding = _confirmed_company(
+        client, fake_email, email="evidence@example.com"
+    )
+    tender, _document_id = _tender(client, headers)
+
+    app.dependency_overrides[get_ai_provider] = lambda: EvidenceAI(
+        answer="yes",
+        tender_evidence="Digitisation of court records",
+        company_evidence=CAPABILITY_QUOTE,
+        match_type="exact_core",
+    )
+    response = client.post(
+        f"/api/tenders/{tender['id']}/similarity", headers=headers
+    )
+    assert response.status_code == 200, response.text
+    similarity = response.json()["similarity"]
+
+    assert similarity["answer"] == "yes"
+    assert similarity["title"] == "Digitisation of court records"
+    assert similarity["tender_evidence"] == "Digitisation of court records"
+    assert similarity["company_evidence"] == CAPABILITY_QUOTE
+    # The model's match_type is advice; the stored type comes from the role of
+    # the company line it actually quoted.
+    assert similarity["match_type"] == "exact_core"
+    assert similarity["evidence_rank"] == 1
+    assert similarity["needs_confirmation"] is False
+
+    listed = client.get("/api/tenders?sort=match_desc", headers=headers)
+    item = next(row for row in listed.json()["items"] if row["id"] == tender["id"])
+    assert item["similarity"]["company_evidence"] == CAPABILITY_QUOTE
+    assert item["relevance"]["tier"] == 1
+    assert item["relevance"]["bucket"] == "strong"
+
+
+def test_a_paraphrased_company_quote_is_not_evidence(client, fake_email):
+    headers, _document, _understanding = _confirmed_company(
+        client, fake_email, email="paraphrase@example.com"
+    )
+    tender, _document_id = _tender(client, headers)
+
+    app.dependency_overrides[get_ai_provider] = lambda: EvidenceAI(
+        answer="yes",
+        tender_evidence="Digitisation of court records",
+        company_evidence="We scan court papers.",
+        match_type="exact_core",
+    )
+    response = client.post(
+        f"/api/tenders/{tender['id']}/similarity", headers=headers
+    )
+    assert response.status_code == 200, response.text
+    similarity = response.json()["similarity"]
+
+    assert similarity["answer"] == "unsure"
+    assert similarity["needs_confirmation"] is True
+    assert similarity["company_evidence"] is None
+    assert similarity["match_type"] == "no_evidence"
+    assert similarity["evidence_rank"] == 6
+
+
+def test_a_support_only_yes_stays_in_the_possible_band(client, fake_email):
+    headers, _document, _understanding = _confirmed_company(
+        client, fake_email, email="support-only@example.com"
+    )
+    saved = client.post(
+        "/api/company/brief",
+        headers=headers,
+        json={
+            "payload": {
+                "support_terms": [
+                    {
+                        "term": "technical support",
+                        "evidence": "Our team provides technical support for the portal.",
+                    }
+                ],
+                "adjacent_terms": [{"term": "document digitisation"}],
+            }
+        },
+    )
+    assert saved.status_code == 200, saved.text
+    tender, _document_id = _tender(
+        client, headers, title="Annual technical support for the portal"
+    )
+
+    app.dependency_overrides[get_ai_provider] = lambda: EvidenceAI(
+        answer="yes",
+        tender_evidence="Annual technical support for the portal",
+        company_evidence="Our team provides technical support for the portal.",
+        match_type="support_only",
+    )
+    response = client.post(
+        f"/api/tenders/{tender['id']}/similarity", headers=headers
+    )
+    assert response.status_code == 200, response.text
+    similarity = response.json()["similarity"]
+
+    assert similarity["answer"] == "yes"
+    assert similarity["match_type"] == "support_only"
+    assert similarity["evidence_rank"] == 4
+
+    listed = client.get("/api/tenders?sort=match_desc", headers=headers)
+    item = next(row for row in listed.json()["items"] if row["id"] == tender["id"])
+    assert item["relevance"]["tier"] == 5
+    assert item["relevance"]["bucket"] == "possible"

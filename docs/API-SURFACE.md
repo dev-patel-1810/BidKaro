@@ -62,6 +62,11 @@ but the server reloads the user/company from Postgres on every request.
 | GET | `/api/company/understanding` | confirmed and proposed kinds of work and delivered projects, with citations | `{documents, capabilities, experiences, counts, rules_version}`; each item carries `page_index`, `printed_label`, `excerpt`, `quote_verified`, `is_ocr`, `state` (`proposed`/`confirmed`/`rejected`) and `origin` (`ai`/`human`); `documents` reports each profile's `understanding_state` and its capability/experience counts |
 | PATCH | `/api/company/capabilities/{id}` | confirm, reject or edit one capability | body `{state?, name?, description?, aliases?}`; human edits set `origin=human`; rejected/proposed rows stay visible but are never used |
 | PATCH | `/api/company/experiences/{id}` | confirm, reject or edit one delivered project | body `{state?, title?, client?, work_family?, description?}` |
+| GET | `/api/company/brief` | the current editable brief, or a deterministic preview before one is saved | `{brief, preview?, terms, rules_version}`; `brief` is null before the first save, and `preview.payload` has the same shape as a stored payload; `brief.source_kind` is `human`, `generated` or `derived` |
+| POST | `/api/company/brief` | save an edited brief as a new version | body `{payload}`; increments `version`, makes the new row current and audits the save; the section a term is typed in is its role, and a support/generic phrase put under core is deterministically downgraded; citations on untouched terms are preserved by the client payload |
+| POST | `/api/company/brief/generate` | derive a new version from the profile and confirmed understanding | deterministic; never deletes a human version; writes the next version and makes it current; returns the same `{brief, terms, rules_version}` shape |
+| GET | `/api/company/brief/versions` | version history, newest first | `{items, next}`; each item carries `id`, `version`, `is_current`, `source_kind`, `summary`, `counts` (core/adjacent/support/generic/projects/certifications) and `created_at` |
+| POST | `/api/company/brief/versions/{id}/activate` | make an older version current | company-scoped; **404** for another company's id; audited |
 
 Company-document terms are a matching signal, not eligibility evidence. The
 reader keeps repeated multi-word phrases and the specific words inside them,
@@ -81,6 +86,23 @@ waits. The response never says whether the company is eligible: eligibility
 stays the deterministic gate, and a capability can only help a work-family
 comparison and a requirement's "have we done this before" badge.
 
+The **company brief** is the editable answer to "what should discovery treat as
+this company's work". It groups the same words into four roles:
+
+| Role | Meaning | Ranking effect |
+|---|---|---|
+| `core` | a confirmed capability or a delivered project work family | can produce the strongest matches |
+| `adjacent` | a specific service or sector the company declared but has not confirmed from a document | ranks below core, above support |
+| `support` | delivery words such as `technical support`, `document retrieval`, `version control` | never ranks as core work |
+| `generic` | recall words such as `technology`, `web pages`, `software` | used to find notices, never to rank one on its own |
+
+Projects are the strongest fit evidence. Certifications are kept for
+eligibility evidence and never make a tender the company's kind of work. A
+brief save is a new version, so an older judgment still names the words it used.
+A generated brief is refreshed after a capability/experience confirmation or
+after an `about_company` document is deleted; a human-edited brief is never
+overwritten.
+
 ## Discovery (scraping module)
 
 | Method | Path | Purpose | Notes |
@@ -95,7 +117,7 @@ comparison and a requirement's "have we done this before" badge.
 | GET | `/api/discovery/sweeps/{id}` | one sweep's state | never `needs_you`: a challenge stops a sweep and it keeps what it read |
 | POST | `/api/discovery/sweeps/{id}/cancel` | stop at the next page boundary | every page already committed is kept; cancelling is progress, not a rollback |
 | POST | `/api/discovery/classify` | queue the labelling + verdict pass | **202** with `{job, created}`; idempotent per row (`rules_version` + content hash); safe to call at any time; a second request returns the queued job |
-| POST | `/api/discovery/similarity` | queue the closed-label work comparison | **202** with `{job, created}`; body `{tender_ids}` (bounded) or empty for the first page; only tenders this company can see are judged; a second request returns the active job instead of stacking; **422** when there is nothing visible or no confirmed capability |
+| POST | `/api/discovery/similarity` | queue the closed-label work comparison | **202** with `{job, created}`; body `{tender_ids}` (bounded) or empty for the first page; only tenders this company has a verdict for are judged; the model is never shown the rules tier or bucket; a second request returns the active job instead of stacking; **422** when there is nothing visible or no usable brief/capability term |
 | GET | `/api/discovery/sources` | pages stored as `discovery_candidates.kind='source'` | URLs and last-seen times; never listed as tenders |
 | GET | `/api/jobs/{id}/runs` | reporting rows for a job | canonical run resource is the job |
 
@@ -120,8 +142,8 @@ tries again.
 | POST | `/api/tenders/{id}/dismiss` | sets `dismissed_at` | per company only |
 | POST | `/api/tenders/{id}/bidding` | sets `bidding_at`; may auto-enqueue a fetch | |
 | POST | `/api/tenders/{id}/not-relevant` | record "not relevant" feedback | small negative weight, per company: the matched work terms are demoted on later reads, never banned; repeated marks of the same term do not stack; the verdict cache is invalidated by the feedback hash |
-| GET | `/api/tenders/{id}/similarity` | the cached work-comparison answer | `{tender_id, similarity}`; `similarity` is null before the tender is judged, otherwise `{answer, anchor_text, anchor_verified, needs_confirmation, reason, capabilities, judged_at, model, rules_version}` |
-| POST | `/api/tenders/{id}/similarity` | judge one tender on demand | same payload; one bounded model call; `force=true` re-asks; **422** when no capability is confirmed |
+| GET | `/api/tenders/{id}/similarity` | the cached work-comparison answer | `{tender_id, similarity}`; `similarity` is null before the tender is judged, otherwise `{answer, title, anchor_text, anchor_verified, tender_evidence, company_evidence, match_type, evidence_rank, needs_confirmation, reason, capabilities, judged_at, model, rules_version}`; `title` is the notice title the model saw, and both evidence fields are the exact stored lines, never paraphrases |
+| POST | `/api/tenders/{id}/similarity` | judge one tender on demand | same payload; one bounded model call; `force=true` re-asks; **422** only when neither a confirmed capability nor a current brief term exists |
 | GET | `/api/tenders/{id}/requirement-experience` | what the company's own experience shows for each requirement | `{items, counts, rules_version}`; `items` carry `requirement_id`, `coverage` (`covered`/`partial`/`new`/`unknown`), `capabilities`, `experiences`, `company_citation` (`document_id`, `page_index`, `excerpt`) and `reason`; `counts` repeats the four buckets |
 | POST | `/api/tenders/{id}/requirement-experience` | compare requirements with confirmed experience | one bounded, user-triggered call; unchanged requirements reuse their stored mapping; no confirmed item -> **422**, no AI key -> **503**; returns the same listing |
 | POST | `/api/tenders/{id}/refresh` | enqueue a source recheck | 202 with job id; when the portal states the current bidding cycle is terminated, the job records it and returns the fixed message instead of updating the notice fields |
@@ -142,22 +164,44 @@ With no scraping module installed, `POST /api/tenders` is the only way to
 create a tender. It parses the PDF before committing, so a corrupt file never
 leaves an empty tender behind.
 
-### Relevance buckets, verdicts and audit
+### Relevance roles, rungs, verdicts and audit
 
 The corpus is global and the profile is per company, so the listing decision is
-made at read time and is never a storage filter. Three buckets:
+made at read time and is never a storage filter. A company's words are split
+into four roles before any matching happens:
 
-- `strong` - a profile phrase, two independent terms, or one term rare enough
-  in the corpus (at or below `RARE_SHARE` of titles) to be specific alone;
-- `possible` - one common term. **Shown**, visibly demoted, so recall is kept
-  without a generic word leading the list;
-- `hidden` - the work does not match the declared profile. Not listed by
-  default, and returned (labelled) only with `include_hidden=true`.
+| Role | Meaning |
+|---|---|
+| `core` | a confirmed capability or a delivered project's work family |
+| `adjacent` | a specific service or sector the company declared but has not confirmed from a document |
+| `support` | delivery words such as `technical support`, `document retrieval`, `version control` |
+| `generic` | recall words such as `technology`, `web pages`, `software` |
 
-Rarity is data-derived: it is measured over the corpus titles
-(`TenderRepository.recent_titles`), never a handwritten stop-list. The authority
-and organisation chain are never work evidence; they only supply the region
-context a bare keyword needs. A bucket says nothing about eligibility.
+Those roles produce seven rungs:
+
+| Tier | Evidence | Bucket |
+|---|---|---|
+| 1 | a full multi-word core phrase, or a core match plus adjacent/support evidence | `strong` |
+| 2 | a core match alone or a partial core token | `strong` |
+| 3 | adjacent declared work plus a region match | `strong` |
+| 4 | adjacent declared work alone | `possible` |
+| 5 | a support term plus a region match | `possible` |
+| 6 | a support term alone, or a generic-only match | `possible` |
+| 7 | no usable match | `hidden` |
+
+A whole phrase counts two units and a single term or partial token one; a tier
+is the rung, and the score is only a band inside it (`90-95`, `80-88`, `70-78`,
+`60-68`, `50-58`, `40-48`, `0-25`, capped at 95) so the interface never reads
+100%. Generic words are kept for **recall**, not ranking: a generic-only match
+is visible at tier 6 and never lifts itself above a support or adjacent match.
+Fit reads only the declared words and the notice: there is no corpus-rarity
+pass, so a page request never scans the whole corpus for an explanation. The
+authority and organisation chain are never work evidence; the region only breaks
+the tie at tiers 3 and 5. A tier says nothing about eligibility.
+
+"Not relevant" feedback demotes the matched terms by `0.15` per rejected term,
+clamped to tier 4-6: it never bans a tender and repeats of the same term do not
+stack.
 
 `sort=match_desc` is the fit order the interface defaults to: every visible row
 is ordered by its `relevance.match_score` descending, and rows with the same
@@ -180,22 +224,49 @@ stored or rejected.
 
 ### Work understanding and the closed-label comparison
 
-The rules gate decides most of the corpus. The genuinely ambiguous residue can
-be compared with the company's confirmed work by an AI that may answer **only**
-`yes`, `no` or `unsure` for each notice: no score, no free-form reasoning, no
-eligibility call, no invented capability. Only human-confirmed capabilities are
-sent, so the company's own words are the only evidence a match can rest on.
+The rules gate decides most of the corpus. Every candidate that reaches the AI
+is judged **without being told its rules tier**, so the model cannot simply echo
+the gate. It may answer only `yes`, `no` or `not_sure` for each notice — no
+score, no free-form reasoning, no eligibility call, no invented capability. The
+company side is the current brief (or its deterministic preview), not just the
+confirmed capabilities, so a declared adjacent term can still be compared.
 
-A `yes` is accepted only when the words the model quotes as the anchor are
-found in the notice's own work description; an unanchored `yes` is stored as
-`unsure` with `needs_confirmation` and displayed as "AI suggested â€” confirm". A
-`no` demotes the fit by `0.10` and appends a reason; it never hides or deletes
-the tender. A verified `yes` gives a `0.10` boost. The adjustment is applied on
-the read path on top of the cached rules verdict, so the verdict cache stays
-rules-only, and the comparison never changes an eligibility answer. Judgments
-are cached per company/tender by an input hash covering the tender's content
-hash and the confirmed capability set, so a repeat read does not re-ask while a
-capability edit causes a fresh judgment.
+Each answer is evidence-aware:
+
+| Field | Rule |
+|---|---|
+| `title` | the notice title the model saw, stored as `judged_title` |
+| `tender_evidence` | an exact line from the notice's title, work type or cited requirements |
+| `company_evidence` | an exact line from the brief or its cited document lines |
+| `match_type` | `exact_core`, `semantic_core`, `adjacent`, `support_only`, `generic_only` or `no_evidence` |
+| `reason` | one short sentence; never eligibility, money or a bid decision |
+
+Both quotes are validated against the stored lines before they are shown. A
+`yes` whose quotes cannot be found is stored as `unsure` with
+`needs_confirmation`, and it changes no score; the interface says "AI suggested
+— confirm". A missing side is a valid `no_evidence` answer, not an invitation to
+paraphrase.
+
+The evidence hierarchy is deterministic and comes from the matched company
+line's role, not from model confidence:
+
+| Match type | Rank | Ranking effect |
+|---|---|---|
+| `exact_core` | 1 | tier 1 |
+| `semantic_core` | 2 | tier 2 |
+| `adjacent` | 3 | tier 3 with the company's region, otherwise tier 4 |
+| `support_only` | 4 | tier 5 with the region, otherwise tier 6 |
+| `generic_only` | 5 | tier 6 |
+| `no_evidence` | 6 | no adjustment |
+
+A `no` is stored as tier 6 at the bottom of the possible band and appends a
+reason; it never hides, deletes or dismisses the tender. The adjustment is
+applied on the **read path** on top of the cached rules verdict, so
+`company_tender_verdicts` stays rules-only and the comparison never changes an
+eligibility answer. Judgments are cached per company/tender by an input hash
+covering the tender's content hash, the confirmed capability signature, the
+brief payload signature and the rules version; a repeat read does not re-ask
+while a brief edit, a capability edit or a re-published notice does.
 
 Requirement coverage is a separate, user-triggered comparison: `covered` and
 `partial` carry the page and verbatim line from the company's own document,

@@ -14,9 +14,7 @@ from types import SimpleNamespace
 from app.core.db import SessionLocal
 from app.discovery.relevance import (
     GLOBAL_SCORE_CAP,
-    RARE_SHARE,
     classify,
-    rarity_from_titles,
     tender_matches_company,
     understanding_terms_from_rows,
 )
@@ -109,43 +107,20 @@ def test_two_independent_terms_are_strong_evidence():
     assert set(verdict["matched_terms"]) == {"road", "survey"}
 
 
-def test_one_common_word_only_earns_possible():
-    """A word in most of the corpus cannot be the whole evidence.
+def test_a_single_adjacent_word_with_the_region_is_tier_three():
+    """A declared work word is adjacent, not generic, even when it is common.
 
-    The share is read from the candidate titles, so this is the data saying
-    "road" is everywhere here, not a handwritten list calling it generic.
-    """
-
-    company = _company(services=["road"])
-    titles = [f"Road repair of stretch {index}" for index in range(40)]
-    rarity = rarity_from_titles(titles, ["road"])
-    assert rarity["road"] >= 0.2
-
-    verdict = classify(company, _tender("Road repair of stretch 1"), rarity=rarity)
-
-    assert verdict["bucket"] == "possible"
-    assert verdict["tier"] == 5
-    assert "common" in verdict["reasons"][0]
-
-
-def test_one_specific_word_is_possible_not_strong():
-    """A single word is one support unit: tier 5 with the region, tier 6 without.
-
-    This is the deliberate quality trade: only a phrase, two terms or a
-    confirmed capability can make a strong match, because one word is how a
-    scanning firm matched a road department.
+    A declared word is still a real work word, so with the company's region it
+    lands on tier 3 rather than being written off as generic vocabulary.
     """
 
     company = _company(services=["photogrammetry"])
-    rarity = {"photogrammetry": 0.0}
 
-    verdict = classify(
-        company, _tender("Photogrammetry of the canal command area"), rarity=rarity
-    )
+    verdict = classify(company, _tender("Photogrammetry of the canal command area"))
 
-    assert verdict["bucket"] == "possible"
-    assert verdict["tier"] == 5
-    assert rarity["photogrammetry"] <= RARE_SHARE
+    assert verdict["bucket"] == "strong"
+    assert verdict["tier"] == 3
+    assert verdict["matched_terms"] == ["photogrammetry"]
 
 
 def test_a_single_keyword_outside_the_region_is_possible_not_hidden():
@@ -172,14 +147,12 @@ def test_a_keyword_in_the_region_is_a_better_tier():
 
 def test_negative_feedback_demotes_and_never_bans():
     company = _company(services=["road resurfacing"])
-    rarity = {"road resurfacing": 0.0}
     tender = _tender("Road resurfacing of NH-48")
 
-    before = classify(company, tender, rarity=rarity)
+    before = classify(company, tender)
     after = classify(
         company,
         tender,
-        rarity=rarity,
         negative={"road resurfacing": 2},
     )
 
@@ -194,13 +167,11 @@ def test_negative_feedback_demotes_and_never_bans():
     assert after["matched_terms"] == ["road resurfacing"]
     assert any("not relevant" in reason for reason in after["reasons"])
 
-    both = classify(
-        company, tender, rarity=rarity, negative={"road": 1, "survey": 1}
-    )
+    both = classify(company, tender, negative={"road": 1, "survey": 1})
     assert both["score"] <= after["score"]
     # Still visible however often similar work is rejected.
     assert tender_matches_company(
-        company, tender, rarity=rarity, negative={"road resurfacing": 2}
+        company, tender, negative={"road resurfacing": 2}
     )
 
 
@@ -263,11 +234,13 @@ def test_places_departments_and_acronyms_are_not_work_evidence():
 
     verdict = classify(company, tender)
 
-    assert verdict["bucket"] == "hidden"
-    assert verdict["matched_terms"] == []
-    assert verdict["reasons"] == [
-        "The work does not match your confirmed or declared work profile."
-    ]
+    # A bare technology word is recall-only: the notice is found, but it sits
+    # on the bottom visible rung instead of becoming work evidence. The place,
+    # department and acronyms contribute nothing.
+    assert verdict["bucket"] == "possible"
+    assert verdict["tier"] == 6
+    assert verdict["matched_terms"] == ["computer"]
+    assert all("Generic recall term" in reason for reason in verdict["reasons"][:-1])
 
 
 def test_generic_words_are_not_work_evidence():
@@ -277,7 +250,12 @@ def test_generic_words_are_not_work_evidence():
     )
     tender = _tender("Data entry and software supply")
 
-    assert classify(company, tender)["bucket"] == "hidden"
+    verdict = classify(company, tender)
+
+    assert verdict["bucket"] == "possible"
+    assert verdict["tier"] == 6
+    assert set(verdict["matched_terms"]) <= {"data", "entry", "software", "document", "computer"}
+    assert any("Generic recall term" in reason for reason in verdict["reasons"])
 
 
 def test_a_generic_word_inside_a_company_phrase_is_not_the_phrase():

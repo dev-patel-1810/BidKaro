@@ -349,30 +349,66 @@ Indexes: **UNIQUE `(company_document_id, normalized)`**,
 Both tables are derived from the document: deleting or reclassifying the profile
 cascades the rows away, and only confirmed rows are read by matching.
 
+### `company_briefs` (versioned, per company)
+
+The editable answer to "what should discovery treat as this company's work".
+Each save is a new row; one row per company is current, and fit reads only the
+current row (or a deterministic preview when no row exists). Projects are fit
+evidence; certifications are kept for eligibility evidence and never make a
+tender the company's kind of work.
+
+| Column | Type | Null | Notes |
+|---|---|---|---|
+| `id` | uuid | no | PK |
+| `company_id` | uuid | no | FK `companies`, `CASCADE` |
+| `version` | integer | no | starts at 1; **UNIQUE** with `company_id` |
+| `is_current` | boolean | no | default `false`; at most one true per company |
+| `source_document_id` | uuid | yes | FK `company_documents`, `SET NULL` |
+| `source_kind` | text | no | default `generated`; `generated|human|derived` |
+| `payload` | jsonb | no | default `{}`; `summary`, `core_terms`, `adjacent_terms`, `support_terms`, `generic_terms`, `projects`, `certifications`, `rules_version` |
+| `prompt_version` | text | yes | derived-brief rules version |
+| `created_by` | uuid | yes | FK `users`, `SET NULL` |
+| `created_at`, `updated_at` | timestamptz | no | |
+
+Indexes: **UNIQUE `(company_id, version)`**, `(company_id)`, and a **partial
+UNIQUE `(company_id) WHERE is_current`** so two rows can never both be current.
+Each term item is `{term, role, source, evidence?, page_index?, printed_label?}`
+when a citation exists; a human edit sets `source='human'` on a new term and
+preserves an untouched term's citation. A support/generic phrase typed into a
+stronger section is deterministically downgraded by the service before save.
+A generated brief is never allowed to overwrite a human-edited one.
+
 ### `tender_similarity_judgments` (cached, per company)
 
 One closed-label answer per company and tender: `yes`, `no` or `unsure`. It is a
-second signal on top of the rules verdict and never an eligibility answer.
+second signal on top of the rules verdict and never an eligibility answer. The
+row keeps the exact line quoted on each side so the answer can be inspected
+instead of trusted.
 
 | Column | Type | Null | Notes |
 |---|---|---|---|
 | `id` | uuid | no | PK |
 | `company_id` | uuid | no | FK, `RESTRICT` |
 | `tender_id` | uuid | no | FK, `CASCADE` |
-| `input_hash` | text | no | covers tender content hash + confirmed capability signature + rules version |
+| `input_hash` | text | no | covers tender content hash + confirmed capability signature + brief payload signature + rules version |
 | `answer` | text | no | `yes|no|unsure` |
-| `anchor_text` | text | yes | the words the model quoted from the notice |
-| `anchor_verified` | boolean | no | default `false`; true only when found in the notice |
-| `needs_confirmation` | boolean | no | default `false`; an unanchored `yes` is stored `unsure` + true |
-| `reason` | text | yes | deterministic reason written by our code |
+| `judged_title` | text | yes | the notice title the model saw |
+| `anchor_text` | text | yes | legacy tender-side quote, kept for older rows |
+| `anchor_verified` | boolean | no | default `false`; true only when the quote was found in the notice |
+| `tender_evidence` | text | yes | exact tender line the model quoted |
+| `company_evidence` | text | yes | exact company brief/document line the model quoted |
+| `match_type` | text | yes | `exact_core|semantic_core|adjacent|support_only|generic_only|no_evidence` |
+| `evidence_rank` | integer | yes | deterministic rank 1-6 from the matched company line's role |
+| `needs_confirmation` | boolean | no | default `false`; an unanchored or paraphrased `yes` is stored `unsure` + true |
+| `reason` | text | yes | bounded sentence written by our code |
 | `matched_capability_ids` | uuid[] | no | default `{}` |
 | `model`, `prompt_version`, `rules_version` | text | yes | audit trail |
 | `judged_at` | timestamptz | yes | |
 | `created_at`, `updated_at` | timestamptz | no | |
 
 Indexes: **UNIQUE `(company_id, tender_id)`**. A cached row is reused only
-while `input_hash` matches, so a capability edit or a re-published notice causes
-a fresh judgment.
+while `input_hash` matches, so a capability edit, a brief save or a
+re-published notice causes a fresh judgment.
 
 ### `requirement_experience_matches` (per company)
 
@@ -461,7 +497,7 @@ work.
 - `CHECK (merged_into_tender_id IS NULL OR merged_into_tender_id <> id)`.
 - `CHECK (cycle_state IN ('active','terminated'))`.
 
-**Indexes:** `(closing_at)`, `(portal_id, published_at DESC)`, `(reference_normalised)`, `(content_hash)`, `(supersedes_tender_id)`, `(merged_into_tender_id)`, `(cross_portal_key)`.
+**Indexes:** `(closing_at)`, `(portal_id, published_at DESC)`, `(reference_normalised)`, `(content_hash)`, `(supersedes_tender_id)`, `(merged_into_tender_id)`, `(cross_portal_key)`. Migration `0011_read_path_indexes` adds partial `(created_at DESC, id DESC)` and `(closing_at)` indexes for the open-corpus order, plus `pg_trgm` GIN indexes on `work_title`, `work_type` and `location` so the read-time `ILIKE '%term%'` narrowing is a bitmap lookup instead of a sequential scan. The extension is installed defensively; without it the btree indexes still apply and only the trigram ones are skipped.
 
 **Merge rule.** Upserts fill gaps and never null an existing value: every optional column is written as `COALESCE(excluded.col, tenders.col)`. This is a must-have regression test (blueprint Part 18 #26–27, guide §9).
 

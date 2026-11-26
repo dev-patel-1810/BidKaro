@@ -26,6 +26,7 @@ import { StatusBadge } from "../components/ui/Badge";
 import { DocumentUploadModal } from "../components/documents/DocumentUploadModal";
 import { CompanyDocumentTermsModal } from "../components/documents/CompanyDocumentTermsModal";
 import { CompanyUnderstandingModal } from "../components/documents/CompanyUnderstandingModal";
+import { CompanyBriefModal } from "../components/documents/CompanyBriefModal";
 import { cn, formatBytes, formatDate, isExpired } from "../lib/utils";
 
 const TYPES = ["about_company", "registration", "iso", "turnover", "completion_certificate", "pan", "gst", "other"];
@@ -58,6 +59,7 @@ export function DocumentsPage() {
   const [pendingDelete, setPendingDelete] = useState(null);
   const [termsDocument, setTermsDocument] = useState(null);
   const [understandingOpen, setUnderstandingOpen] = useState(false);
+  const [briefOpen, setBriefOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const firstLoad = useRef(true);
 
@@ -138,6 +140,10 @@ export function DocumentsPage() {
         description={t("documents.subtitle")}
         actions={
           <div className="flex flex-wrap gap-2">
+            <Button variant="outline" onClick={() => setBriefOpen(true)}>
+              <BookOpen className="h-4 w-4" />
+              {t("documents.brief.open")}
+            </Button>
             {hasProfile ? (
               <Button variant="outline" onClick={() => setUnderstandingOpen(true)}>
                 <BookOpen className="h-4 w-4" />
@@ -501,6 +507,12 @@ export function DocumentsPage() {
       <CompanyUnderstandingModal
         open={understandingOpen}
         onClose={() => setUnderstandingOpen(false)}
+        onChanged={load}
+      />
+
+      <CompanyBriefModal
+        open={briefOpen}
+        onClose={() => setBriefOpen(false)}
         onChanged={load}
       />
 

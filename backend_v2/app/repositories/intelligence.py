@@ -247,7 +247,7 @@ class FeedbackRepository:
             self.session.flush()
 
     def negative_work_types(
-        self, company_id: uuid.UUID, *, limit: int = 200
+        self, company_id: uuid.UUID, *, limit: int | None = None
     ) -> dict[str, int]:
         """How often the company rejected each kind of work.
 
@@ -255,18 +255,22 @@ class FeedbackRepository:
         tender match are counted, because before a tender is classified the
         matched terms are the only description of its work. Used as a small
         negative weight, never as a ban: a word that once appeared in a
-        rejected tender must still be able to match a different tender.
+        rejected tender must still be able to match a different tender. Every
+        rejection counts; there is no sample ceiling, because a term rejected
+        after the cap would otherwise silently stop demoting.
         """
 
-        rows = self.session.scalars(
+        statement = (
             select(CompanyRelevanceFeedback)
             .where(
                 CompanyRelevanceFeedback.company_id == company_id,
                 CompanyRelevanceFeedback.verdict == "not_relevant",
             )
             .order_by(CompanyRelevanceFeedback.created_at.desc())
-            .limit(limit)
-        ).all()
+        )
+        if limit is not None:
+            statement = statement.limit(limit)
+        rows = self.session.scalars(statement).all()
         counts: dict[str, int] = {}
         for row in rows:
             for label in list(row.work_types or []) + list(row.matched_terms or []):
@@ -276,20 +280,21 @@ class FeedbackRepository:
         return counts
 
     def list_for_company(
-        self, company_id: uuid.UUID, *, verdict: str | None = None, limit: int = 200
+        self,
+        company_id: uuid.UUID,
+        *,
+        verdict: str | None = None,
+        limit: int | None = None,
     ) -> list[CompanyRelevanceFeedback]:
         statement = select(CompanyRelevanceFeedback).where(
             CompanyRelevanceFeedback.company_id == company_id
         )
         if verdict:
             statement = statement.where(CompanyRelevanceFeedback.verdict == verdict)
-        return list(
-            self.session.scalars(
-                statement.order_by(
-                    CompanyRelevanceFeedback.created_at.desc()
-                ).limit(limit)
-            ).all()
-        )
+        statement = statement.order_by(CompanyRelevanceFeedback.created_at.desc())
+        if limit is not None:
+            statement = statement.limit(limit)
+        return list(self.session.scalars(statement).all())
 
 
 def verdict_input_hash(

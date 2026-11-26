@@ -35,10 +35,10 @@ from app.discovery.roles import (
     ROLE_SUPPORT,
     ROLES,
     classify_term,
-    role_of,
+    role_term,
     term_text,
 )
-from app.discovery.work_text import clean_term, normalize_text
+from app.discovery.work_text import normalize_text
 from app.models.identity import Company, CompanyDocument
 from app.models.understanding import CompanyBrief
 from app.repositories.intelligence import stable_hash
@@ -103,11 +103,13 @@ def _role_priority(role: str) -> int:
 def _merge_term(
     groups: dict[str, dict[str, dict[str, Any]]],
     item: dict[str, Any],
+    *,
+    allow_short_acronym: bool = False,
 ) -> None:
     term = _clean(item.get("term"), 200)
     if not term:
         return
-    cleaned = clean_term(term, allow_short_acronym=True)
+    cleaned = role_term(term, allow_short_acronym=allow_short_acronym)
     if not cleaned:
         return
     role = str(item.get("role") or "").strip().lower()
@@ -289,6 +291,7 @@ class CompanyBriefService:
                         "role": classify_term(alias, confirmed=True),
                         "source": "capability_alias",
                     },
+                    allow_short_acronym=True,
                 )
 
         projects: list[dict[str, Any]] = []
@@ -487,12 +490,12 @@ class CompanyBriefService:
                 term = _clean(term_text(item), 200)
                 if not term:
                     continue
-                stored_role = role_of(item, confirmed=role == ROLE_CORE)
-                # A human can move a term between roles, but cannot label a
-                # support-only phrase as core by mistake: the deterministic
-                # rule wins when the wording is clearly support/generic.
+                stored_role = role
                 derived = classify_term(term, confirmed=role == ROLE_CORE)
-                if stored_role in (ROLE_SUPPORT, ROLE_GENERIC) and role == ROLE_CORE:
+                # The section the human put the term in is the role they chose.
+                # A clearly support/generic phrase cannot be saved as core by
+                # mistake, though: the deterministic rule downgrades it.
+                if derived in (ROLE_SUPPORT, ROLE_GENERIC):
                     stored_role = derived
                 _merge_term(
                     groups,

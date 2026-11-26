@@ -8,6 +8,8 @@ import {
   bucketTone,
   DEFAULT_TENDER_SORT,
   isEprocurementSource,
+  matchTypeLabelKey,
+  matchTypeTone,
   runIsActive,
   scorePercent,
   scoreTone,
@@ -193,6 +195,25 @@ describe("work comparison labels", () => {
     expect(similarityLabelKey(null)).toBeNull();
   });
 
+  it("tones and labels the deterministic evidence hierarchy", () => {
+    expect(matchTypeTone("exact_core")).toBe("green");
+    expect(matchTypeTone("semantic_core")).toBe("green");
+    expect(matchTypeTone("adjacent")).toBe("teal");
+    expect(matchTypeTone("support_only")).toBe("amber");
+    expect(matchTypeTone("generic_only")).toBe("neutral");
+    expect(matchTypeTone("no_evidence")).toBe("neutral");
+    expect(matchTypeTone(null)).toBe("neutral");
+
+    expect(matchTypeLabelKey("exact_core")).toBe(
+      "discover.similarity.matchTypes.exact_core",
+    );
+    expect(matchTypeLabelKey("no_evidence")).toBe(
+      "discover.similarity.matchTypes.no_evidence",
+    );
+    expect(matchTypeLabelKey("made_up")).toBeNull();
+    expect(matchTypeLabelKey(null)).toBeNull();
+  });
+
   it("has a label in both locales for every answer", () => {
     for (const key of [
       "sameWork",
@@ -201,9 +222,27 @@ describe("work comparison labels", () => {
       "unsure",
       "compare",
       "needCapabilities",
+      "judgedAs",
+      "tenderEvidence",
+      "companyEvidence",
+      "noTenderEvidence",
+      "noCompanyEvidence",
+      "evidenceRank",
     ]) {
       for (const locale of [en, hi]) {
         expect(locale.discover.similarity[key]).toBeTruthy();
+      }
+    }
+    for (const key of [
+      "exact_core",
+      "semantic_core",
+      "adjacent",
+      "support_only",
+      "generic_only",
+      "no_evidence",
+    ]) {
+      for (const locale of [en, hi]) {
+        expect(locale.discover.similarity.matchTypes[key]).toBeTruthy();
       }
     }
   });

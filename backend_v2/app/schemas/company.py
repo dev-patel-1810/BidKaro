@@ -182,7 +182,10 @@ class BriefTerm(BaseModel):
     model_config = ConfigDict(extra="allow")
 
     term: str = Field(min_length=1, max_length=200)
-    role: BriefRole = "adjacent"
+    #: The section key is the role a human chose. The default is deliberately
+    #: unset so a term sent under ``core_terms`` is not silently saved as
+    #: adjacent because the client omitted a redundant field.
+    role: BriefRole | None = None
     source: str | None = None
     source_id: str | None = None
     document_id: str | None = None

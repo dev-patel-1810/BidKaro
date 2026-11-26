@@ -8,6 +8,7 @@ adjudication that is only ever allowed to answer "is this the company's work".
 
 from __future__ import annotations
 
+import re
 import uuid
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
@@ -28,6 +29,7 @@ from app.models.intelligence import (
     CompanyTenderVerdict,
     TenderClassification,
 )
+from app.models.understanding import TenderSimilarityJudgment
 from app.repositories.corpus import TenderRepository
 from app.repositories.identity import CompanyRepository
 from app.repositories.intelligence import FeedbackRepository
@@ -372,5 +374,61 @@ def test_an_unanchored_ai_yes_does_not_promote_the_row():
             )
         ).one()
     assert verdict.tier == before_tier
-    assert verdict.bucket == "possible"
+    assert verdict.bucket == "strong"
     assert any("not promoted" in reason for reason in verdict.reasons)
+
+
+class CandidateProvider:
+    """Answers the similarity prompt, not the legacy adjudication prompt."""
+
+    configured = True
+
+    def complete_json(self, *, system: str, user: str) -> dict:
+        ids = re.findall(r"tender_id: ([0-9a-f-]{36})", user)
+        return {
+            "judgments": [
+                {
+                    "tender_id": tender_id,
+                    "title": "Road resurfacing of NH-48",
+                    "answer": "not_sure",
+                    "tender_evidence": "",
+                    "company_evidence": "",
+                    "match_type": "no_evidence",
+                    "reason": "test",
+                }
+                for tender_id in ids
+            ]
+        }
+
+
+def test_all_tier_adjudication_judges_a_strong_rules_row():
+    tender_id = _store("Road resurfacing of NH-48")
+    with SessionLocal() as session:
+        company = _company(session, services=["road"])
+        CorpusIntelligenceService(session).classify_pending(limit=50)
+        CorpusIntelligenceService(session).refresh_verdicts(limit=50)
+        verdict = session.scalars(
+            select(CompanyTenderVerdict).where(
+                CompanyTenderVerdict.company_id == company.id
+            )
+        ).one()
+        assert verdict.tier == 3
+        assert verdict.bucket == "strong"
+
+    with SessionLocal() as session:
+        metrics = CorpusIntelligenceService(session).adjudicate_candidates(
+            CandidateProvider(), limit=10, batch_size=10, max_batches=1
+        )
+
+    # The new pass is not limited to the ambiguous residue: a tier-3 row is
+    # shown to the model too, without the tier in the prompt.
+    assert metrics["judged"] == 1
+    with SessionLocal() as session:
+        judgment = session.scalars(
+            select(TenderSimilarityJudgment).where(
+                TenderSimilarityJudgment.tender_id == tender_id
+            )
+        ).one()
+    assert judgment.answer == "unsure"
+    assert judgment.match_type == "no_evidence"
+    assert judgment.evidence_rank == 6

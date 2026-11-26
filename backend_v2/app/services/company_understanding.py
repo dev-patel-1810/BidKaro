@@ -522,6 +522,11 @@ class CompanyUnderstandingService:
             raise BadRequest(
                 "Another capability from this profile already has that name."
             ) from exc
+        self._refresh_generated_brief(
+            company,
+            source_document_id=row.company_document_id,
+            actor_user_id=actor_user_id,
+        )
         return self.capability_out(row)
 
     def update_experience(
@@ -568,4 +573,41 @@ class CompanyUnderstandingService:
             raise BadRequest(
                 "Another experience from this profile already has that title."
             ) from exc
+        self._refresh_generated_brief(
+            company,
+            source_document_id=row.company_document_id,
+            actor_user_id=actor_user_id,
+        )
         return self.experience_out(row)
+
+    def _refresh_generated_brief(
+        self,
+        company: Company,
+        *,
+        source_document_id: uuid.UUID | None,
+        actor_user_id: uuid.UUID | None,
+    ) -> None:
+        """Keep a generated brief in step with a confirmation or edit.
+
+        A human-edited brief is never overwritten. A generated one is a
+        projection of the confirmed understanding, so confirming a capability
+        must recompute it; otherwise the core terms a human just confirmed would
+        not reach the fit ladder until they pressed "generate" again.
+        """
+
+        try:
+            from app.services.company_brief import CompanyBriefService
+
+            service = CompanyBriefService(self.session)
+            current = service.current(company.id)
+            if current is not None and current.source_kind == "human":
+                return
+            service.generate(
+                company,
+                actor_user_id=actor_user_id,
+                source_document_id=source_document_id,
+                source_kind="generated",
+                commit=True,
+            )
+        except Exception:  # noqa: BLE001 - a brief is not worth failing an edit
+            self.session.rollback()
